@@ -74,6 +74,14 @@ class SocialMediaAggregator:
         if self.session:
             await self.session.close()
             
+    async def cleanup_session(self):
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing session: {e}")
+            self.session = None
+
     def _is_cached(self, asset: str) -> bool:
         """Check if data is cached and still valid"""
         if asset not in self.cache:

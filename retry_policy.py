@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Callable, Any, Optional
 from datetime import datetime, timedelta
+import random
 
 class CircuitBreakerOpen(Exception):
     pass
@@ -12,7 +13,7 @@ from functools import wraps
 
 class RetryPolicy:
     def __init__(self, max_retries: int = 3, base_delay: float = 1.0,
-                 max_delay: float = 30.0, circuit_timeout: int = 60):
+                 max_delay: float = 30.0, circuit_timeout: int = 60, mock_mode: bool = True):
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
@@ -22,10 +23,19 @@ class RetryPolicy:
         self._failure_count = {}
         self._circuit_open_until = {}
         self._failure_counts = {}
+        self.mock_mode = mock_mode
+        self.mock_failure_rate = 0.1  # 10% simulated failure rate
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
         endpoint = func.__qualname__
         
+        if self.mock_mode:
+            # Simulate occasional failures in mock mode
+            if random.random() < self.mock_failure_rate:
+                self._failure_counts[func.__name__] = self._failure_counts.get(func.__name__, 0) + 1
+                raise ConnectionError("Simulated failure in mock mode")
+            return await func(*args, **kwargs)
+
         if self._is_circuit_open(endpoint):
             raise CircuitBreakerOpen(f"Circuit breaker open for {endpoint}")
 

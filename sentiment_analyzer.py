@@ -1,6 +1,8 @@
 import asyncio
 import logging
 from typing import Dict, Optional
+
+import aiohttp
 from social_media_aggregator import SocialMediaAggregator
 from news_analyzer import NewsAnalyzer
 from sentiment_model import SentimentModel
@@ -12,6 +14,7 @@ class CryptoSentimentAnalyzer:
         self.logger = logging.getLogger(__name__)
         self.api_keys = api_keys or {}
         self.model_name = model_name
+        self.session = None
         try:
             self.model = self._load_sentiment_model()
         except Exception as e:
@@ -21,6 +24,7 @@ class CryptoSentimentAnalyzer:
         
     async def initialize(self):
         """Initialize sentiment analyzer connections"""
+        self.session = aiohttp.ClientSession()
         return True
         
     async def analyze_sentiment(self, asset: str) -> float:
@@ -72,3 +76,11 @@ class CryptoSentimentAnalyzer:
             self.logger.warning("Sentiment analysis unavailable - model not loaded")
             return 0.0  # neutral sentiment
         # ...existing code...
+
+    async def cleanup_session(self):
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing session: {e}")
+            self.session = None

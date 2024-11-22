@@ -1,6 +1,9 @@
 import asyncio
+import signal
 import logging
 from datetime import datetime
+import aiohttp
+from collections import defaultdict
 
 # Import existing modules
 from arbitrage_executor import ArbitrageExecutor
@@ -130,9 +133,22 @@ class TradingSystem:
         
         self.retry_policy = RetryPolicy()
         self.rate_limiter = RateLimiter()
+        self.session = None  # Add aiohttp session property
+        self.sessions = {}  # Track all client sessions
+        self.error_counts = defaultdict(int)  # Add error counter
+        self.error_log_threshold = 3  # Only log first N occurrences
+        self.health_stats = {
+            'market_data_updates': 0,
+            'trade_executions': 0,
+            'errors': defaultdict(int),
+            'last_health_check': datetime.now()
+        }
 
     async def initialize(self):
         try:
+            # Create shared aiohttp session
+            self.sessions['main'] = aiohttp.ClientSession()
+            
             self.logger.info("Initializing Trading System")
             
             # Initialize components one by one to better handle failures
@@ -174,8 +190,52 @@ class TradingSystem:
             return True
             
         except Exception as e:
+            await self._cleanup_sessions()
             self.logger.error(f"Initialization failed: {str(e)}")
             raise
+
+    async def _cleanup_sessions(self):
+        """Helper method to properly close all sessions"""
+        try:
+            # First cleanup component sessions in parallel
+            cleanup_tasks = []
+            
+            components_with_sessions = [
+                self.orderbook,
+                self.ws_feed,
+                self.news,
+                self.chain,
+                self.sentiment,
+                self.monitor,
+                self.social,
+                self.gas,
+                self.node,
+                self.exchange,  # Add exchange manager
+                self.collateral  # Add collateral manager
+            ]
+            
+            for component in components_with_sessions:
+                if hasattr(component, 'cleanup_session'):
+                    task = asyncio.create_task(component.cleanup_session())
+                    cleanup_tasks.append(task)
+
+            if cleanup_tasks:
+                await asyncio.wait(cleanup_tasks, timeout=5.0)
+
+            # Then cleanup main sessions
+            session_tasks = []
+            for session in self.sessions.values():
+                if session and not session.closed:
+                    task = asyncio.create_task(session.close())
+                    session_tasks.append(task)
+            
+            if session_tasks:
+                await asyncio.wait(session_tasks, timeout=5.0)
+            
+            self.sessions.clear()
+            
+        except Exception as e:
+            self.logger.error(f"Session cleanup error: {e}")
 
     async def start(self):
         if self.running:
@@ -185,47 +245,93 @@ class TradingSystem:
             self.running = True
             self.logger.info("Starting trading system")
             
-            # Start main loops
-            await asyncio.gather(
-                self.market_data_loop(),
-                self.trading_loop(),
-                self.risk_loop(),
-                self.monitoring_loop()
-            )
+            # Create tasks and store their references
+            self.tasks = [
+                asyncio.create_task(self.market_data_loop()),
+                asyncio.create_task(self.trading_loop()),
+                asyncio.create_task(self.risk_loop()),
+                asyncio.create_task(self.monitoring_loop())
+            ]
             
+            # Wait for all tasks to complete or for cancellation
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+            
+        except asyncio.CancelledError:
+            self.logger.info("System shutdown requested")
         except Exception as e:
             self.logger.error(f"Startup failed: {str(e)}")
+        finally:
             await self.shutdown()
-            raise
+
+    async def _update_market_data(self):
+        """Update market data with error throttling"""
+        try:
+            results = await asyncio.gather(
+                self.orderbook.update(),
+                self.ws_feed.process(),
+                self.chain.analyze(),
+                self.gas.update(),
+                return_exceptions=True
+            )
+            
+            # Update health stats
+            self.health_stats['market_data_updates'] += 1
+            self.health_stats['last_health_check'] = datetime.now()
+            
+            # Reset error counts on successful update
+            self.error_counts.clear()
+            
+            # Process results
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    error_key = f"market_data_{i}"
+                    self.error_counts[error_key] += 1
+                    
+                    # Only log first N occurrences
+                    if self.error_counts[error_key] <= self.error_log_threshold:
+                        self.logger.warning(f"Market data component {i} error: {result}")
+                    elif self.error_counts[error_key] == self.error_log_threshold + 1:
+                        self.logger.warning(f"Suppressing further market data errors for component {i}")
+                    
+                    if not MOCK_MODE:
+                        raise result
+                        
+        except Exception as e:
+            self.health_stats['errors']['market_data'] += 1
+            if not MOCK_MODE:
+                raise
+            # In mock mode, only log occasional errors
+            error_key = "mock_mode_error"
+            self.error_counts[error_key] += 1
+            if self.error_counts[error_key] <= self.error_log_threshold:
+                self.logger.debug(f"Mock mode market data error: {e}")
 
     async def market_data_loop(self):
         while self.running:
             try:
-                # Update market data with rate limiting
                 if await self.rate_limiter.acquire('market_data'):
-                    await self.retry_policy.execute(self._update_market_data)
+                    async with asyncio.timeout(5):
+                        await self.retry_policy.execute(self._update_market_data)
+            except asyncio.TimeoutError:
+                self.logger.warning("Market data update timed out")
             except Exception as e:
-                self.logger.error(f"Market data error: {str(e)}")
                 if self.should_emergency_shutdown(e):
                     await self.emergency_shutdown()
                     break
-            await asyncio.sleep(0.1)  # 100ms interval
-
-    async def _update_market_data(self):
-        await asyncio.gather(
-            self.orderbook.update(),
-            self.ws_feed.process(),
-            self.chain.analyze(),
-            self.gas.update()
-        )
+                # Only log non-mock errors
+                if not MOCK_MODE or not str(e).startswith("Simulated"):
+                    self.logger.error(f"Market data error: {str(e)}")
+            await asyncio.sleep(0.5)  # Increase sleep time in mock mode
 
     async def trading_loop(self):
         while self.running:
             try:
-                # Execute trading strategies with proper awaits
+                # Properly await market maker execution
+                await self.market_maker.execute()
+                
+                # Execute other trading strategies
                 await asyncio.gather(
                     self.arbitrage.execute(),
-                    self.market_maker.execute(),
                     self.inventory.rebalance()
                 )
             except Exception as e:
@@ -253,7 +359,10 @@ class TradingSystem:
     async def monitoring_loop(self):
         while self.running:
             try:
-                # Properly await all monitoring calls
+                stats = await self._get_system_health()
+                self.logger.info(f"System Health: {stats}")
+                
+                # Regular health checks
                 await asyncio.gather(
                     self.monitor.check(),
                     self.connection.check(),
@@ -270,45 +379,108 @@ class TradingSystem:
     async def emergency_shutdown(self):
         self.logger.critical("Emergency shutdown initiated")
         try:
-            await self.exchange.close_all_positions()
-            await self.exchange.cancel_all_orders()
+            # First close sessions
+            await self._cleanup_sessions()
+            
+            # Then handle emergency actions
+            async with asyncio.TaskGroup() as tg:
+                if hasattr(self.exchange, 'close_all_positions'):
+                    tg.create_task(
+                        asyncio.wait_for(
+                            self.exchange.close_all_positions(),
+                            timeout=5.0
+                        )
+                    )
+                if hasattr(self.exchange, 'cancel_all_orders'):
+                    tg.create_task(
+                        asyncio.wait_for(
+                            self.exchange.cancel_all_orders(),
+                            timeout=5.0
+                        )
+                    )
+        except* (asyncio.TimeoutError, Exception) as e:
+            self.logger.critical(f"Emergency shutdown tasks failed: {e!r}")
+        finally:
             await self.shutdown()
-        except Exception as e:
-            self.logger.critical(f"Emergency shutdown failed: {str(e)}")
-            self.running = False
 
     async def shutdown(self):
+        if not self.running:
+            return
+            
         self.logger.info("Graceful shutdown initiated")
         self.running = False
         
         try:
-            await asyncio.gather(
-                self.connection.shutdown(),
-                self.arbitrage.shutdown(),
-                self.collateral.shutdown(),
-                self.exchange.shutdown(),
-                self.failover.shutdown(),
-                self.gas.shutdown(),
-                self.health.shutdown(),
-                self.infra.shutdown(),
-                self.inventory.shutdown(),
-                self.market_maker.shutdown(),
-                self.mev.shutdown(),
-                self.news.shutdown(),
-                self.node.shutdown(),
-                self.chain.shutdown(),
-                self.orderbook.shutdown(),
-                self.risk.shutdown(),
-                self.sentiment.shutdown(),
-                self.social.shutdown(),
-                self.monitor.shutdown(),
-                self.ws_feed.shutdown()
+            # First stop all running tasks
+            if hasattr(self, 'tasks'):
+                await asyncio.wait(
+                    [asyncio.create_task(self._cancel_task(task)) for task in self.tasks],
+                    timeout=5.0
+                )
+            
+            # Then cleanup sessions
+            await self._cleanup_sessions()
+            
+            # Finally shutdown components
+            components = [
+                self.connection, self.arbitrage, self.collateral,
+                self.exchange, self.failover, self.gas,
+                self.health, self.infra, self.inventory,
+                self.market_maker, self.mev, self.news,
+                self.node, self.chain, self.orderbook,
+                self.risk, self.sentiment, self.social,
+                self.monitor, self.ws_feed
+            ]
+            
+            await asyncio.wait(
+                [
+                    asyncio.create_task(self._shutdown_component(component))
+                    for component in components
+                ],
+                timeout=10.0
             )
+                
         except Exception as e:
             self.logger.error(f"Shutdown error: {str(e)}")
-            raise
+        finally:
+            # Final check for any remaining tasks
+            tasks = [t for t in asyncio.all_tasks() 
+                    if t is not asyncio.current_task()]
+            if tasks:
+                await asyncio.wait(tasks, timeout=1.0)
+
+    async def _cancel_task(self, task):
+        """Helper method to cancel a task safely"""
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _shutdown_component(self, component):
+        """Helper method to shutdown a component safely"""
+        try:
+            # First cleanup any sessions
+            if hasattr(component, 'cleanup_session'):
+                try:
+                    await asyncio.wait_for(component.cleanup_session(), timeout=5.0)
+                except Exception as e:
+                    self.logger.error(f"Session cleanup failed for {component.__class__.__name__}: {e}")
+            
+            # Then shutdown component
+            if hasattr(component, 'shutdown') and callable(component.shutdown):
+                result = component.shutdown()
+                if asyncio.iscoroutine(result):
+                    await asyncio.wait_for(result, timeout=5.0)
+        except Exception as e:
+            self.logger.error(f"Error shutting down {component.__class__.__name__}: {e}")
 
     def should_emergency_shutdown(self, error: Exception) -> bool:
+        # Don't trigger emergency shutdown for mock mode errors
+        if MOCK_MODE and str(error).startswith("Simulated"):
+            return False
+            
         return isinstance(error, (
             SystemError,
             RuntimeError,
@@ -316,17 +488,55 @@ class TradingSystem:
             ConnectionError
         ))
 
+    async def _get_system_health(self) -> dict:
+        """Get system health metrics"""
+        return {
+            'uptime': (datetime.now() - self.health_stats['last_health_check']).seconds,
+            'market_data_updates': self.health_stats['market_data_updates'],
+            'trade_executions': self.health_stats['trade_executions'],
+            'error_counts': dict(self.health_stats['errors']),
+            'components': {
+                'orderbook': await self.orderbook.get_health(),
+                'market_maker': await self.market_maker.get_health(),
+                'risk': await self.risk.get_health()
+            }
+        }
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     
+    # Set a higher recursion limit if needed
+    import sys
+    sys.setrecursionlimit(1500)
+    
+    # Setup signal handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(loop, sig)))
+    
+    system = None
     try:
         system = TradingSystem()
         if await system.initialize():
             await system.start()
     except Exception as e:
         logger.critical(f"Fatal error: {str(e)}")
-        raise
+    finally:
+        if system:
+            await system.shutdown()
+
+async def shutdown(loop, signal):
+    """Cleanup tasks tied to the service's shutdown."""
+    logger = logging.getLogger(__name__)
+    logger.info(f"Received exit signal {signal.name}")
+    
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    
+    logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+    await asyncio.gather(*tasks, return_exceptions=True)
+    loop.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -107,6 +107,11 @@ class SystemMonitor:
         self.memory_threshold = 90  # percentage
         self.logger = logging.getLogger(__name__)
 
+    async def initialize(self):
+        self.metrics = {}
+        self.alerts = []
+        self.logger.info("SystemMonitor initialized")
+
     def _setup_logging(self):
         logging.basicConfig(
             level=logging.INFO,

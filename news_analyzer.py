@@ -32,8 +32,10 @@ class NewsAnalyzer:
         self.logger = logging.getLogger(__name__)
         self.api_keys = api_keys or {}
         self.enabled = bool(api_keys)
+        self.session = None
         
     async def initialize(self):
+        self.session = aiohttp.ClientSession()
         self.logger.info("News Analyzer initialized in mock mode")
         return True
         
@@ -45,3 +47,11 @@ class NewsAnalyzer:
         
     async def shutdown(self):
         return True
+
+    async def cleanup_session(self):
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing session: {e}")
+            self.session = None

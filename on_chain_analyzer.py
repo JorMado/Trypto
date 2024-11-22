@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Optional, List
 from dataclasses import dataclass
+import aiohttp
 
 @dataclass
 class ChainMetrics:
@@ -25,8 +26,10 @@ class OnChainAnalyzer:
             network_load=0.0,
             mempool_size=0
         )
+        self.session = None
 
     async def initialize(self):
+        self.session = aiohttp.ClientSession()
         self.logger.info("OnChain Analyzer initialized in mock mode")
         return True
 
@@ -37,6 +40,14 @@ class OnChainAnalyzer:
             
         # Real implementation would go here
         return self.metrics
+
+    async def cleanup_session(self):
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing session: {e}")
+            self.session = None
 
     async def shutdown(self):
         self.logger.info("OnChain Analyzer shutdown")

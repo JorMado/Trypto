@@ -35,8 +35,10 @@ class GasOracle:
             'standard': 0,
             'slow': 0
         }
+        self.session = None
 
     async def initialize(self):
+        self.session = aiohttp.ClientSession()
         self.logger.info("Initializing GasOracle")
         return True
 
@@ -357,3 +359,11 @@ class GasOracle:
                 'high': max_fee_per_gas * 100000  # Complex contract interaction
             }
         }
+        
+    async def cleanup_session(self):
+        if self.session and not self.session.closed:
+            try:
+                await self.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing session: {e}")
+            self.session = None
