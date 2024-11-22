@@ -3,7 +3,7 @@ from decimal import Decimal
 import logging
 import time
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import numpy as np
 from collections import defaultdict
 
@@ -20,6 +20,15 @@ class PositionHealth:
     risk_score: float
     position_size: float
 
+@dataclass
+class HealthMetrics:
+    cpu_usage: float
+    memory_usage: float
+    status: str
+
+    def to_dict(self):
+        return asdict(self)
+
 class HealthCalculator:
     def __init__(self, market_data_provider=None, risk_params=None):
         self.logger = logging.getLogger(__name__)
@@ -34,9 +43,13 @@ class HealthCalculator:
         self.logger.info("Initializing HealthCalculator")
         return True
 
-    async def calculate(self):
-        # Basic implementation
-        pass
+    async def calculate(self) -> HealthMetrics:
+        # Example implementation
+        return HealthMetrics(
+            cpu_usage=50.0,
+            memory_usage=60.0,
+            status='healthy'
+        )
 
     async def calculate_health_ratio(self, position):
         # Basic implementation
@@ -44,3 +57,6 @@ class HealthCalculator:
 
     async def shutdown(self):
         self.logger.info("Shutting down HealthCalculator")
+
+    async def close(self):
+        pass

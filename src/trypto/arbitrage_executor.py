@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from cachetools import TTLCache
+from trypto.base_component import BaseComponent
 
 class PathFinder:
     def __init__(self):
@@ -10,13 +11,15 @@ class PathFinder:
         # Basic implementation
         return []  # TODO: Implement actual path finding logic
 
-class ArbitrageExecutor:
+class ArbitrageExecutor(BaseComponent):
     def __init__(self, exchanges=None, min_profit_threshold=0.001):
+        super().__init__()
         self.logger = logging.getLogger(__name__)
         self.exchanges = exchanges or []
         self.min_profit_threshold = min_profit_threshold
         self.path_finder = PathFinder()
         self.monitored_assets = []  # Will be populated during initialization
+        self.completed_trades = []  # Add this line
         
     async def initialize(self):
         try:
@@ -32,6 +35,7 @@ class ArbitrageExecutor:
             opportunities = await self.find_opportunities()
             for opp in opportunities:
                 await self._execute_opportunity(opp)
+                self.completed_trades.append(opp)  # Simulate trade execution
         except Exception as e:
             self.logger.error(f"Error in arbitrage execution: {e}")
 

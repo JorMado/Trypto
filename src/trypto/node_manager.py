@@ -27,6 +27,11 @@ class NodeConfig:
     min_peers: int
     required_block_height: Optional[int] = None
 
+class NodeStatus:
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    FAILED = "FAILED"
+
 class NodeManager:
     def __init__(self, primary_nodes: List[Dict], fallback_nodes: List[Dict]):
         self.primary_nodes = primary_nodes

@@ -6,30 +6,30 @@ import aiohttp
 from collections import defaultdict
 
 # Import existing modules
-from arbitrage_executor import ArbitrageExecutor
-from collateral_manager import CollateralManager
-from connection_health import ConnectionHealth
-from exchange_manager import ExchangeManager
-from failover_system import FailoverSystem
-from gasOracle import GasOracle
-from health_calculator import HealthCalculator
-from infrastructure import CryptoInfrastructure
-from inventory_manager import InventoryManager
-from market_maker import CryptoMarketMaker
-from mev_protector import MEVProtector
-from news_analyzer import NewsAnalyzer
-from node_manager import NodeManager
-from on_chain_analyzer import OnChainAnalyzer
-from order_book_aggregator import OrderBookAggregator
-from rate_limiter import RateLimiter
-from retry_policy import RetryPolicy
-from risk_manager import CryptoRiskManager
-from sentiment_analyzer import CryptoSentimentAnalyzer
-from sentiment_model import SentimentModel
-from social_media_aggregator import SocialMediaAggregator
-from system_monitor import SystemMonitor
-from ws_feed_handler import WSFeedHandler
-from config import MOCK_API_KEYS, MOCK_MODE, CONFIG
+from trypto.arbitrage_executor import ArbitrageExecutor
+from trypto.collateral_manager import CollateralManager
+from trypto.connection_health import ConnectionHealth
+from trypto.exchange_manager import ExchangeManager
+from trypto.failover_system import FailoverSystem
+from trypto.gasOracle import GasOracle
+from trypto.health_calculator import HealthCalculator
+from trypto.infrastructure import CryptoInfrastructure
+from trypto.inventory_manager import InventoryManager
+from trypto.market_maker import CryptoMarketMaker
+from trypto.mev_protector import MEVProtector
+from trypto.news_analyzer import NewsAnalyzer
+from trypto.node_manager import NodeManager
+from trypto.on_chain_analyzer import OnChainAnalyzer
+from trypto.order_book_aggregator import OrderBookAggregator
+from trypto.rate_limiter import RateLimiter
+from trypto.retry_policy import RetryPolicy
+from trypto.risk_manager import CryptoRiskManager
+from trypto.sentiment_analyzer import CryptoSentimentAnalyzer
+from trypto.sentiment_model import SentimentModel
+from trypto.social_media_aggregator import SocialMediaAggregator
+from trypto.system_monitor import SystemMonitor
+from trypto.ws_feed_handler import WSFeedHandler
+from trypto.config import MOCK_API_KEYS, MOCK_MODE, CONFIG
 
 class TradingSystem:
     def __init__(self):

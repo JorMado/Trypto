@@ -1,10 +1,9 @@
-
 import logging
 from abc import ABC
 
-class BaseComponent(ABC):
+class BaseComponent:
     def __init__(self):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        pass
         
     async def initialize(self):
         """Initialize the component"""

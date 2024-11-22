@@ -12,19 +12,25 @@ class MaxRetriesExceeded(Exception):
 from functools import wraps
 
 class RetryPolicy:
-    def __init__(self, max_retries: int = 3, base_delay: float = 1.0,
-                 max_delay: float = 30.0, circuit_timeout: int = 60, mock_mode: bool = True):
+    def __init__(
+        self,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        circuit_timeout: int = 300,
+        mock_mode: bool = False,
+        mock_failure_rate: float = 0.2
+    ):
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
         self.circuit_timeout = circuit_timeout
-        self.circuit_trips = {}
-        self.failure_counts = {}
-        self._failure_count = {}
-        self._circuit_open_until = {}
-        self._failure_counts = {}
         self.mock_mode = mock_mode
-        self.mock_failure_rate = 0.1  # 10% simulated failure rate
+        self.mock_failure_rate = mock_failure_rate
+        
+        # Initialize internal state
+        self._failure_counts = {}
+        self._circuit_open_until = {}
 
     async def execute(self, func: Callable, *args, **kwargs) -> Any:
         endpoint = func.__qualname__
@@ -93,4 +99,8 @@ class RetryPolicy:
             self._trip_circuit(endpoint)
         return delay
 
-    # ...rest of implementation...
+    def __call__(self, func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            return await self.execute(func, *args, **kwargs)
+        return wrapper

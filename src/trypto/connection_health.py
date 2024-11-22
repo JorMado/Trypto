@@ -1,4 +1,4 @@
-from base_component import BaseComponent
+from trypto.base_component import BaseComponent
 import logging
 import asyncio
 import time
@@ -6,6 +6,7 @@ import time
 class ConnectionHealth(BaseComponent):
     def __init__(self, heartbeat_interval=30, timeout_threshold=5):
         super().__init__()
+        self.logger = logging.getLogger(__name__)
         self.last_heartbeat = time.time()
         self.heartbeat_interval = heartbeat_interval
         self.timeout_threshold = timeout_threshold
